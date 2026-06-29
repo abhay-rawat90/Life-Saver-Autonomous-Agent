@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { googleLogout, useGoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
-import { Sparkles, Clock, ArrowRight, Zap, Flame, CheckCircle2, LogOut, ShieldCheck, Mic } from 'lucide-react';
+import { CheckCircle2, Flame, Zap, Clock, ArrowRight, Sparkles, Mic, LogOut, Database, ShieldCheck } from 'lucide-react';
 
 
 
@@ -13,6 +13,8 @@ function App() {
   const [user, setUser] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [isGoalMode, setIsGoalMode] = useState(false);
+  const [activeTab, setActiveTab] = useState('tasks');
 
   const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
   // Re-authenticate user session from local storage on load
@@ -41,19 +43,46 @@ function App() {
       const res = await axios.post(`${API_BASE_URL}/api/tasks/initiate`, {
         taskDescription: taskInput,
         userEmail: user.email,
-        accessToken: user.accessToken
+        accessToken: user.accessToken,
+        isGoal: isGoalMode
       });
       setTaskInput('');
       fetchTasks(user.email);
       
       // NEW: Dynamic Notification based on backend orchestration
       setNotification(`⚡ Agent Executed: ${res.data.actions || "Workspace mapped"}`);
-      setTimeout(() => setNotification(null), 6000);
+      setTimeout(() => setNotification(null), 10000);
       
     } catch (error) {
       console.error("Error communicating with backend:", error);
     }
     setLoading(false);
+  };
+
+
+  const handleClearWorkspace = async (taskId) => {
+    try {
+      await axios.delete(`${API_BASE_URL}/api/tasks/${taskId}?email=${user.email}`);
+      fetchTasks(user.email); // Refresh dashboard instantly
+      setNotification('🗑️ Workspace archived and cleared.');
+      setTimeout(() => setNotification(null), 5000);
+    } catch (error) {
+      console.error("Error clearing workspace:", error);
+    }
+  };
+
+  const handleIncrementStreak = async (taskId) => {
+    try {
+      await axios.put(`${API_BASE_URL}/api/tasks/${taskId}/streak?email=${user.email}`);
+      fetchTasks(user.email);
+      setNotification('🔥 Streak increased! The Agent will prepare your next milestone tomorrow.');
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) {
+      if (error.response?.data?.error) {
+        setNotification(`⚠️ ${error.response.data.error}`);
+        setTimeout(() => setNotification(null), 4000);
+      }
+    }
   };
 
   const handleVoiceRecord = () => {
@@ -148,6 +177,10 @@ function App() {
     }
   };
 
+  const displayedWorkspaces = tasks.filter(task => 
+    activeTab === 'goals' ? task.isGoal : !task.isGoal
+  );
+
   
 
   // Auth Screen State
@@ -225,6 +258,20 @@ function App() {
               rows={3}
               className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-4 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all resize-none shadow-inner"
             />
+
+            <div className="flex justify-end mt-3">
+              <button
+                onClick={() => setIsGoalMode(!isGoalMode)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all border ${
+                  isGoalMode 
+                    ? 'bg-orange-500/10 border-orange-500/50 text-orange-400' 
+                    : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Flame className={`w-4 h-4 ${isGoalMode ? 'text-orange-500' : 'text-zinc-500'}`} />
+                {isGoalMode ? 'Goal/Habit Mode Active' : 'Switch to Goal Mode'}
+              </button>
+            </div>
             <div className="mt-4 flex justify-between items-center">
               
               {/* Voice Button */}
@@ -241,7 +288,7 @@ function App() {
                 <Mic className="w-5 h-5" />
               </button>
 
-              {/* Your existing Initiate button */}
+              {/* Initiate button */}
               <button 
                 onClick={handleInitiateTask} 
                 disabled={loading || !taskInput.trim()}
@@ -274,27 +321,99 @@ function App() {
             </div>
           </div>
         )}
-          <h2 className="text-2xl font-bold flex items-center gap-2 border-b border-zinc-800 pb-4">
-            <Zap className="w-6 h-6 text-emerald-500" />
-            Active Workspaces
-          </h2>
           
-          {tasks.length === 0 ? (
-            <div className="text-center py-12 border border-dashed border-zinc-800 rounded-2xl bg-zinc-900/10">
-              <p className="text-zinc-500 text-sm">No compute records identified. Initiate an operational objective above.</p>
+          {/* Dashboard Header & Sliding Toggle */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <h2 className="text-2xl font-bold text-zinc-100 flex items-center gap-2">
+              <Database className="w-6 h-6 text-emerald-500" />
+              Active Workspaces
+            </h2>
+
+            {/* Animated Sliding Toggle */}
+            <div className="relative flex items-center bg-zinc-950 border border-zinc-800 p-1 rounded-xl w-full sm:w-auto">
+              <div
+                className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-zinc-800 border border-zinc-700 rounded-lg transition-transform duration-300 ease-out shadow-md ${
+                  activeTab === 'goals' ? 'translate-x-[calc(100%+4px)]' : 'translate-x-0'
+                }`}
+              />
+              
+              <button
+                onClick={() => setActiveTab('tasks')}
+                className={`relative z-10 flex-1 sm:w-32 py-2 text-sm font-bold flex items-center justify-center gap-2 transition-colors duration-300 ${
+                  activeTab === 'tasks' ? 'text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Tasks
+              </button>
+              
+              <button
+                onClick={() => setActiveTab('goals')}
+                className={`relative z-10 flex-1 sm:w-32 py-2 text-sm font-bold flex items-center justify-center gap-2 transition-colors duration-300 ${
+                  activeTab === 'goals' ? 'text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <Flame className={`w-4 h-4 ${activeTab === 'goals' ? 'text-orange-500' : 'text-zinc-500'}`} />
+                Goals
+              </button>
+            </div>
+          </div>
+          
+          {/* Dynamic Empty State */}
+          {displayedWorkspaces.length === 0 ? (
+            <div className="col-span-full py-20 flex flex-col items-center justify-center text-center border-2 border-dashed border-zinc-800/50 bg-zinc-950/20 rounded-2xl animate-in fade-in duration-500">
+              <div className={`w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mb-4 border border-zinc-800 shadow-inner ${activeTab === 'goals' ? 'shadow-orange-900/20' : 'shadow-emerald-900/20'}`}>
+                {activeTab === 'goals' 
+                  ? <Flame className="w-8 h-8 text-orange-500/50" />
+                  : <Zap className="w-8 h-8 text-zinc-600" />
+                }
+              </div>
+              <h3 className="text-xl font-semibold text-zinc-300">
+                {activeTab === 'goals' ? "No Active Habits" : "Zero Active Workspaces"}
+              </h3>
+              <p className="text-sm text-zinc-500 mt-2 max-w-md mx-auto">
+                {activeTab === 'goals' 
+                  ? "Toggle the Habit Mode above and declare a long-term goal for the agent to track and evolve."
+                  : "Your slate is clean. Dictate or type a massive task above, and the agent will dynamically scaffold your execution environment."}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {tasks.map((task) => (
+              {displayedWorkspaces.map((task) => (
                 <div key={task._id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden hover:border-zinc-700 transition-colors flex flex-col">
                   
                   {/* Task Header */}
                   <div className="bg-zinc-950/50 border-b border-zinc-800 p-5">
                     <div className="flex justify-between items-start gap-4 mb-3">
                       <h3 className="text-lg font-bold text-zinc-100">{task.taskTitle}</h3>
-                      <div className={`px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider whitespace-nowrap flex items-center gap-1 ${getUrgencyColor(task.urgencyLevel)}`}>
-                        <Clock className="w-3 h-3" />
-                        {task.urgencyLevel}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className={`px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider whitespace-nowrap flex items-center gap-1 ${getUrgencyColor(task.urgencyLevel)}`}>
+                          <Clock className="w-3 h-3" />
+                          {task.urgencyLevel}
+                        </div>
+                        {task.isGoal ? (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1 px-2.5 py-1 bg-orange-950/40 border border-orange-500/30 rounded-full">
+                              <Flame className="w-3.5 h-3.5 text-orange-500" />
+                              <span className="text-xs font-bold text-orange-400">{task.streakCount}</span>
+                            </div>
+                            <button
+                              onClick={() => handleIncrementStreak(task._id)}
+                              className="p-1.5 bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 text-zinc-500 hover:text-orange-400 rounded-lg transition-all"
+                              title="Complete Daily Micro-Action"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleClearWorkspace(task._id)}
+                            className="p-1.5 bg-zinc-900 border border-zinc-800 hover:border-emerald-500/50 text-zinc-500 hover:text-emerald-400 rounded-lg transition-all"
+                            title="Complete & Clear Workspace"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                     
@@ -311,6 +430,7 @@ function App() {
                     </div>
                   </div>
 
+                  {/* Task Content Body */}
                   <div className="p-5 space-y-5 flex-1">
                     
                     {/* Micro Steps */}
@@ -318,26 +438,19 @@ function App() {
                       <div className="space-y-4">
                         <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Execution Blueprint</span>
                         
-                        {/* Dependency Graph / Node Tree */}
                         <div className="relative border-l border-zinc-800 ml-3 space-y-4 pb-2">
                           {task.microSteps.map((step, idx) => (
                             <div key={idx} className="relative pl-6 group">
-                              
-                              {/* Glowing Node Dot */}
                               <div className="absolute w-3 h-3 bg-zinc-900 border-2 border-emerald-500/50 rounded-full -left-[6.5px] top-1.5 group-hover:bg-emerald-500 group-hover:border-emerald-400 group-hover:shadow-[0_0_12px_rgba(52,211,153,0.6)] transition-all duration-300" />
-                              
-                              {/* Connection Line Highlight (Active on hover) */}
                               <div className="absolute w-[2px] h-full bg-emerald-500/0 group-hover:bg-emerald-500/20 -left-[1px] top-4 transition-colors duration-300" />
                               
-                              {/* Blueprint Content Box */}
                               <div className="bg-zinc-950/40 border border-zinc-800/80 group-hover:border-emerald-500/30 p-3 rounded-xl transition-all duration-300 shadow-sm">
                                 <div className="text-[10px] font-bold text-emerald-500/80 uppercase tracking-wider mb-1.5 flex items-center gap-1">
                                   <Zap className="w-3 h-3" />
-                                  Node 0{idx + 1}
+                                  Milestone 0{idx + 1}
                                 </div>
                                 <p className="text-sm text-zinc-300 leading-relaxed">{step}</p>
                               </div>
-                              
                             </div>
                           ))}
                         </div>
@@ -345,17 +458,18 @@ function App() {
                     )}
 
                     {/* Pre-Work */}
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Generated Pre-Work</span>
-                      <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
-                        <pre className="font-mono text-xs text-zinc-400 whitespace-pre-wrap">
-                          {task.preWorkCompleted}
-                        </pre>
+                    {task.preWorkCompleted && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Generated Pre-Work</span>
+                        <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3 max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
+                          <pre className="font-mono text-xs text-zinc-400 whitespace-pre-wrap">
+                            {task.preWorkCompleted}
+                          </pre>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    )}
 
-                  {/* NEW: Conditional Cloud Assets */}
+                    {/* Conditional Cloud Assets */}
                     {(task.googleDocLink || task.youtubeVideoId) && (
                       <div className="space-y-3 pt-2">
                         <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Cloud Assets</span>
@@ -398,6 +512,7 @@ function App() {
                         </div>
                       </div>
                     )}
+                  </div>
 
                   {/* Immediate Action Footer */}
                   <div className="bg-emerald-950/20 border-t border-zinc-800 p-4">
